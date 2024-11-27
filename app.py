@@ -77,6 +77,35 @@ def get_level():
     if not response.data:
         return jsonify({'error': 'No levels found for the given bank_id'}), 404
     return jsonify(response.data), 200
+    
+
+@app.route('/get_site', methods=['POST'])
+def get_site():
+    data = request.json
+    user_id = data.get('user_id')
+    if not user_id: 
+        return jsonify({'error': 'user_id is required'}), 400
+    user_response = supabase_client.table('users').select('site_id').eq('user_id', user_id).execute()
+    if not user_response.data or not user_response.data[0].get('site_id'):
+        return jsonify({'error': 'No site_id found for the given user_id'}), 404
+
+    site_id = user_response.data[0]['site_id']
+
+
+    site_response = supabase_client.table('site').select('*').eq('site_id', site_id).execute()
+    if not site_response.data:
+        return jsonify({'error': 'No site found for the given site_id'}), 404
+
+
+    result = {
+        'user_id': user_id,
+        'site_id': site_id,
+        'site_details': site_response.data
+    }
+
+    return jsonify(result), 200
+
+
 
 @app.route('/serway_palletId', methods=['POST'])
 def serway_palletId():
