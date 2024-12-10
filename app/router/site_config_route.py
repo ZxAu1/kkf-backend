@@ -1,9 +1,10 @@
+import pprint
 from flask import Blueprint , jsonify , request
 from app.config.supabase_client import supabase
 
 site_config_route = Blueprint('site', __name__)
 
-# site , (delete set state ?)
+# site 
 @site_config_route.route('/get_site', methods=['POST'])
 def get_site():
     try:
@@ -11,12 +12,19 @@ def get_site():
         user_id = int(body['user_id'])
         print(user_id)
         res = (
-            supabase.table("site")
-            .select("*, crane(*, camera(*), bank(*))")
-            .eq("user_id", user_id)
+            supabase.table('site')
+            .select('*, crane(*, camera(*), bank(*))')
+            .order('site_id', desc=False)
+            .eq('user_id', user_id)
+            .eq('delete_status', False)
+            .eq('crane.delete_status', False)
             .execute()
         )
- 
+
+        # sort crane id 
+        for site in res.data:
+            site['crane'].sort(key=lambda crane:crane['crane_id'])
+
         return jsonify({'msg':'get data success ' , 'siteData':res.data}) , 200
     except Exception as e :
         print(e)
@@ -35,7 +43,7 @@ def add_site():
         if not data:
             return jsonify({'status': 0}), 404
         response = supabase.table('site').insert({'user_id': user_id,'company_id': company_id,'site_name': site_name,}).execute()
-        return jsonify({'msg': 'Add new site sucessfuly'}), 201
+        return jsonify({'msg': 'Add new site sucessfully!'}), 201
     except Exception as e:
         print("Error 'Add new site:", str(e))
         return jsonify({"error": "Server error", "details": str(e)}), 500
@@ -48,12 +56,32 @@ def update_site():
         site_id = body['site_id']
         
         res = supabase.table('site').update({'site_name':site_name}).eq('site_id',site_id).execute()
-        return jsonify({'msg':'update site completed !!!','data':res.data}) , 200
+        return jsonify({'msg':'Update site successfully!','data':res.data}) , 200
     except Exception as e :
         print("Error 'update new site:", str(e))
         return jsonify({"error": "Server error", "details": str(e)}), 500
 
-# crane (delete problem)
+@site_config_route.route('/delete_site' , methods=['POST'])
+def delete_site():
+    try:
+        body = request.get_json()
+        site_id = int(body['site_id'])
+        delete_status = bool(body['delete_status'])
+
+        res = (supabase
+               .table('site')
+               .update({
+                   'delete_status':delete_status,
+               })
+               .eq('site_id',site_id)
+               .execute())
+        
+        return jsonify({'msg':'Delete site successfully!','data':res.data}) , 200
+    except Exception as e :
+        print("Error 'update new site:", str(e))
+        return jsonify({"error": "Server error", "details": str(e)}), 500
+
+# crane 
 @site_config_route.route('/get_crane_detail' , methods=['POST'])
 def get_crane_detail():
     try:
@@ -65,8 +93,15 @@ def get_crane_detail():
                .select('*,camera(*) ,bank(*)')
                .eq('crane_id' , int(crane_id))
                .execute())
-    
-        return jsonify({'msg':'get crane detail success' ,'craneData' : res.data[0] })
+
+        # sort camera and bank
+        for crane in res.data:
+            crane['camera'].sort(key=lambda camera:camera['camera_id'])
+
+        for crane in res.data:
+            crane['bank'].sort(key=lambda bank:bank['bank_id'])
+
+        return jsonify({'msg':'Get crane detail successfully!' ,'craneData' : res.data[0] })
             
     except Exception as e : 
         print(e)
@@ -82,8 +117,8 @@ def add_crane():
         site_id = data.get('site_id')
         if not data:
             return jsonify({'status': 0}), 404
-        response = supabase.table('crane').insert({'site_id': site_id, 'crane_name': crane_name,'path_opc': path_opc,'id_wcs': id_wcs,}).execute()
-        return jsonify({'msg': 'Add new crane sucessfuly'}), 201
+        res = supabase.table('crane').insert({'site_id': site_id, 'crane_name': crane_name,'path_opc': path_opc,'id_wcs': id_wcs,}).execute()
+        return jsonify({'msg': 'Add new crane successfully!','data':res.data}), 201
     except Exception as e:
         print("Error 'Add new crane:", str(e))
         return jsonify({"error": "Server error", "details": str(e)}), 500
@@ -96,6 +131,7 @@ def update_crane():
         crane_name = body['crane_name']
         path_opc = body['path_opc']
         id_wcs = body['id_wcs']
+
         res = (supabase
                .table('crane')
                .update({
@@ -107,43 +143,53 @@ def update_crane():
                 .execute()
                )
         
-        return jsonify({'msg':'update crane successfully!!' , 'data':res.data}) , 200
+        return jsonify({'msg':'Update crane successfully!' , 'data':res.data}) , 200
 
         
     except Exception as e :
         print("Error 'Add new crane:", str(e))
         return jsonify({"error": "Server error", "details": str(e)}), 500
-
-# cannot delete now becasue FK issue
-@site_config_route.route('/delete_crane/<int:crane_id>' , methods=['DELETE'])
-def delete_crane(crane_id):
+ 
+@site_config_route.route('/delete_crane' , methods=['POST'])
+def delete_crane():
     try:
+        body = request.get_json()
+        crane_id = body['crane_id']
+        delete_status = body['delete_status']
         res = (supabase
                .table('crane')
-               .delete()
+               .update({
+                   'delete_status':bool(delete_status)
+               })
                .eq('crane_id',int(crane_id))
                .execute())
         
-        return jsonify({'msg':'delete crane sucess!!','delete data':res.data}) , 200
+        return jsonify({'msg':'Delete crane successfully!','data':res.data}) , 200
     except Exception as e :
         print('error', e)
         return jsonify({'error msg':str(e)}) , 500
 
-# Camera route
+# camera
 @site_config_route.route('/add_camera', methods=['POST'])
 def add_camera():
     try:
         data = request.json
-        print(data, '<== hello camera')
         crane_id = data.get('crane_id')
         camera_url = data.get('camera_url')
-        if not data:
-            return jsonify({'status': 0}), 404
-        response = supabase.table('camera').insert({'crane_id': crane_id, 'camera_url': camera_url}).execute()
-        return jsonify({'msg': 'Add new camera sucessfuly' , 'latestData':response.data}), 201
+
+        if not data: return jsonify({'status': 0}), 404
+
+        res = (supabase
+                    .table('camera')
+                    .insert({
+                        'crane_id': crane_id, 
+                        'camera_url': camera_url})
+                    .execute())
+        
+        return jsonify({'msg': 'Add new camera sucessfuly' , 'latestData':res.data}), 201
     except Exception as e:
         print("Error 'Add new camera:", str(e))
-        return jsonify({"error": "Server error", "details": str(e)}), 500
+        return jsonify({"msg": "Server error , error detail: " +str(e)}), 500
     
 @site_config_route.route('/update_camera', methods=['POST'])
 def update_camera():
@@ -160,20 +206,24 @@ def update_camera():
                .eq('camera_id',camera_id)
                .execute())
 
-        return jsonify({'msg': 'update new camera sucessfuly' , 'data' : res.data}), 200
+        return jsonify({'msg': 'Update camera sucessfully!' , 'data' : res.data}), 200
     except Exception as e :
-        print('error', e)
-        return jsonify({'error msg':e}) , 500
+        print('error', str(e))
+        return jsonify({'msg':str(e)}) , 500
 
 @site_config_route.route('/delete_camera/<int:camera_id>' , methods=['DELETE'])
 def delete_camera(camera_id):
     try:
-        res = (supabase.table('camera').delete().eq('camera_id',camera_id).execute())
-        print('In Delete method')
-        return jsonify({'msg':'delete camera sucess!!'}) , 200
+        res = (supabase
+               .table('camera')
+               .delete()
+               .eq('camera_id',camera_id)
+               .execute())
+
+        return jsonify({'msg':'Delete camera successfully!','data':res.data}) , 200
     except Exception as e :
         print('error', e)
-        return jsonify({'error msg':e}) , 500
+        return jsonify({'msg':e}) , 500
 
 @site_config_route.route('/toggle_camera', methods=['POST'])
 def toggle_camera():
@@ -183,19 +233,19 @@ def toggle_camera():
         activated_status = data.get('active_status')
         print(data)
         
-        # Query the crane table
-        res = supabase.table('camera').update({'camera_activate': activated_status}).eq('camera_id', camera_id).execute()
-        result = {
-            "msg": "toggle camera completed",
-            "data": res.data
-        }
+        res = (supabase
+            .table('camera')
+            .update({'camera_activate': activated_status})
+            .eq('camera_id', camera_id)
+            .execute())
+  
       
-        return jsonify(result), 200
+        return jsonify({'msg':'Toggle camera successfully!','data':res.data}), 200
     except Exception as e:
         print("Error 'Get Crane Detail':", str(e))
-        return jsonify({"error": "Server error", "details": str(e)}), 500
+        return jsonify({"msg": "Server error , Error detail: "+ str(e)}), 500
     
-# Bank  
+# bank  
 @site_config_route.route('/add_bank', methods=['POST'])
 def add_bank():
     try:
@@ -214,10 +264,10 @@ def add_bank():
                         'bay': bay, 
                         'level': level, })
                     .execute())
-        return jsonify({'msg': 'Add new bank sucessfuly' , 'data': res.data}), 201
+        return jsonify({'msg': 'Add new bank sucessfully!' , 'data': res.data}), 201
     except Exception as e:
         print("Error 'add new bank:", str(e))
-        return jsonify({"error": "Server error", "details": str(e)}), 500
+        return jsonify({"msg": "Server error, Error detail: "+ str(e)}), 500
     
 @site_config_route.route('/update_bank',methods=['POST'])
 def update_bank():
@@ -239,10 +289,10 @@ def update_bank():
                .execute()
                )
         
-        return jsonify({'msg':'update bank success' , 'data':res.data}) , 200
+        return jsonify({'msg':'Update bank successfully!' , 'data':res.data}) , 200
     except Exception as e : 
         print("Error 'update bank:", str(e))
-        return jsonify({"error": "Server error", "details": str(e)}), 500
+        return jsonify({"msg": "Server error, Error Detail: "+ str(e)}), 500
     
 @site_config_route.route('/delete_bank/<int:bank_id>',methods=['DELETE'])
 def delete_bank(bank_id):
@@ -253,7 +303,7 @@ def delete_bank(bank_id):
                .eq('bank_id',int(bank_id))
                .execute())
 
-        return jsonify({'msg':'delete bank successfully' ,'data':res.data}) , 200 
+        return jsonify({'msg':'Delete bank successfully!' ,'data':res.data}) , 200 
     except Exception as e :
         print("Error 'delete bank:", str(e))
-        return jsonify({"error": "Server error", "details": str(e)}), 500
+        return jsonify({"msg": "Server error, Error detail: "+ str(e)}), 500
